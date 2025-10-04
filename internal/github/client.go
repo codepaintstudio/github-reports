@@ -8,13 +8,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// Client wraps GitHub API client
+// Client 封装 GitHub API 客户端
 type Client struct {
 	client *github.Client
 	token  string
 }
 
-// NewClient creates a new GitHub client
+// NewClient 创建一个新的 GitHub 客户端
 func NewClient(token string) *Client {
 	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
@@ -28,7 +28,7 @@ func NewClient(token string) *Client {
 	}
 }
 
-// GetAuthenticatedUser returns the authenticated user's login name
+// GetAuthenticatedUser 返回已认证用户的登录名
 func (c *Client) GetAuthenticatedUser(ctx context.Context) (string, error) {
 	user, _, err := c.client.Users.Get(ctx, "")
 	if err != nil {

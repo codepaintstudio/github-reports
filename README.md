@@ -1,14 +1,15 @@
-# GitHub Weekly Report AI Agent
+# GitHub Reports AI Agent
 
-自动生成 GitHub 活动周报的 AI Agent，通过 GitHub API 拉取用户活动数据，使用 LLM 生成结构化周报，并支持企业微信/飞书推送。
+基于飞书 Webhook 触发的 GitHub 技术动态分析 AI Agent。通过自然语言指令，自动拉取 GitHub 用户活动数据，使用 DeepSeek LLM 生成技术总结报告，并推送到飞书。
 
-## 功能特性
+## 核心特性
 
-- **GitHub 数据采集**：自动拉取 Commits、PR、Issues、Code Reviews 等活动数据
-- **AI 智能总结**：支持 OpenAI/Claude 等 LLM，自动生成专业周报
-- **多种触发方式**：支持定时触发（Cron）和手动触发（HTTP API）
-- **多渠道通知**：支持企业微信、飞书机器人推送
-- **多用户支持**：可配置多个 GitHub 账号
+- **智能解析**：通过 LLM 从自然语言中提取 GitHub 用户名
+- **数据采集**：自动拉取 Commits、PR、Issues、Code Reviews 等活动数据
+- **AI 总结**：使用 DeepSeek 生成技术深度分析报告
+- **飞书集成**：Webhook 触发 + 自动推送结果到飞书
+- **Token 认证**：Webhook 接口受 token 保护
+- **错误推送**：处理失败时自动将错误信息发送到飞书
 
 ## 快速开始
 
@@ -24,7 +25,7 @@ cd github-reports
 复制配置模板并修改：
 
 ```bash
-cp config.yaml.yaml config.yaml
+cp config.example.yaml config.yaml
 ```
 
 编辑 `config.yaml`：
@@ -33,28 +34,23 @@ cp config.yaml.yaml config.yaml
 server:
   port: 8080
 
+webhook:
+  token: "your_webhook_token" # Webhook 认证 token
+
 github:
   tokens:
-    - token: "ghp_your_github_token"
-      username: "your_username"
+    - token: "ghp_your_github_token_here"
 
 llm:
-  provider: "deepseek" # deepseek, openai, claude
-  api_key: "sk-your-api-key"
+  provider: "deepseek"
+  api_key: "sk-your-deepseek-api-key"
   model: "deepseek-chat"
   base_url: "https://api.deepseek.com/v1"
 
-scheduler:
-  enabled: true
-  cron: "0 15 * * 5" # 每周五下午 3 点
-
 notifiers:
-  wechat:
-    enabled: true
-    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx"
   feishu:
-    enabled: false
-    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/xxx"
+    enabled: true
+    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-hook-here"
 ```
 
 ### 3. 运行服务
@@ -63,160 +59,136 @@ notifiers:
 # 安装依赖
 go mod download
 
-# 运行服务
-go run cmd/server/main.go --config=./configs/config.yaml
+# 编译并运行
+go build -o github-reports cmd/server/main.go
+./github-reports --config=./config.yaml
 ```
 
-## API 使用
-
-### 手动触发生成报告
+或者直接运行：
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/reports/generate \
+go run cmd/server/main.go --config=./config.yaml
+```
+
+## 使用方式
+
+### 飞书机器人触发（主要使用方式）
+
+#### 1. 配置飞书机器人
+
+在飞书群中添加自定义机器人，配置 Webhook 转发到你的服务：
+
+```
+POST https://your-domain.com/api/v1/webhook
+```
+
+#### 2. 在飞书中发送消息
+
+用户在飞书群中 @ 机器人并发送：
+
+```
+@机器人 帮我分析一下 minorcell 的 GitHub 动态
+```
+
+或者：
+
+```
+@机器人 生成 github.com/minorcell 的技术总结
+```
+
+#### 3. 自动流程
+
+1. 飞书 → 你的 Webhook
+2. LLM 提取用户名 `minorcell`
+3. 拉取 GitHub 最近 7 天的活动数据
+4. LLM 生成技术分析报告
+5. 推送报告到飞书群
+
+#### 4. 接收报告
+
+用户在飞书中收到 Markdown 格式的技术分析：
+
+```markdown
+# [minorcell](https://github.com/minorcell) 的 GitHub 技术动态分析
+
+## github-reports
+
+- 实现了基于 Webhook 的智能周报生成，采用 LLM 提取用户信息
+- 重构 LLM 模块，统一使用 DeepSeek API
+- 优化错误处理，失败时自动推送错误到飞书
+
+## 总体技术分析
+
+近期主要精力集中在新功能开发。
+解决的关键难题包括：LLM 集成、GitHub API 数据聚合。
+共提交 15 个 commits，新增 2000 行代码，删除 500 行代码。
+```
+
+### 直接 API 调用（测试用）
+
+```bash
+curl -X POST http://localhost:8080/api/v1/webhook \
+  -H "Authorization: YOUT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "your_username",
-    "since": "2024-01-01T00:00:00Z",
-    "until": "2024-01-07T23:59:59Z",
-    "notify": true
+    "content": "帮我分析一下 minorcell 的 GitHub 动态"
   }'
 ```
 
-### 健康检查
+## API 接口
 
-```bash
-curl http://localhost:8080/api/v1/health
+### POST /api/v1/webhook
+
+智能 Webhook 接口，接收自然语言指令。
+
+**认证**：需要 Authorization Header
+
+**请求示例**：
+
+```json
+{
+  "content": "帮我分析一下 minorcell 的 GitHub 动态"
+}
 ```
 
-## 配置说明
+**响应成功**：
 
-### GitHub Token 配置
-
-1. 访问 [GitHub Settings - Tokens](https://github.com/settings/tokens)
-2. 生成新的 Personal Access Token
-3. 需要的权限：`repo`, `read:user`
-
-### LLM 配置
-
-#### 使用 DeepSeek（默认推荐）
-
-```yaml
-llm:
-  provider: "deepseek"
-  api_key: "sk-xxx"
-  model: "deepseek-chat"
-  base_url: "https://api.deepseek.com/v1"
+```json
+{
+  "status": "success",
+  "username": "minorcell",
+  "message": "Report generated and sent to Feishu"
+}
 ```
 
-#### 使用 Claude
+**响应失败**：
 
-```yaml
-llm:
-  provider: "claude"
-  api_key: "sk-ant-xxx"
-  model: "claude-3-5-sonnet-20241022"
-```
+错误信息会自动发送到飞书，HTTP 返回错误码。
 
-#### 使用 OpenAI
-
-```yaml
-llm:
-  provider: "openai"
-  api_key: "sk-xxx"
-  model: "gpt-4-turbo-preview"
-```
-
-### 定时任务配置
-
-使用标准 Cron 表达式：
-
-```yaml
-scheduler:
-  enabled: true
-  cron: "0 15 * * 5" # 每周五下午 3 点
-  default_since: 168h # 默认统计最近 7 天
-```
-
-常用 Cron 表达式：
-
-- `0 15 * * 5`：每周五下午 3 点
-- `0 9 * * 1`：每周一上午 9 点
-- `0 18 * * *`：每天下午 6 点
-
-### 通知配置
-
-#### 企业微信机器人
-
-1. 创建群聊并添加机器人
-2. 获取 Webhook URL
-3. 配置到 `config.yaml`
-
-#### 飞书机器人
-
-1. 创建群聊并添加机器人
-2. 获取 Webhook URL
-3. 配置到 `config.yaml`
-
-## 项目结构
+## 工作流程
 
 ```
-github-reports/
-├── cmd/
-│   └── server/
-│       └── main.go              # 应用入口
-├── internal/
-│   ├── config/                  # 配置管理
-│   ├── github/                  # GitHub API 集成
-│   ├── llm/                     # LLM 集成
-│   ├── scheduler/               # 定时任务调度
-│   ├── notifier/                # 通知模块
-│   ├── reporter/                # 报告生成
-│   └── api/                     # HTTP API
-├── configs/
-│   └── config.yaml              # 配置文件
-├── CLAUDE.md                    # 项目设计文档
-└── README.md                    # 使用文档
+用户在飞书 @ 机器人
+    ↓
+飞书机器人转发到你的 Webhook
+    ↓
+验证 Token
+    ↓
+LLM 提取 GitHub 用户名
+    ↓
+拉取 GitHub 活动数据 (最近 7 天)
+    ↓
+LLM 生成技术分析报告
+    ↓
+推送报告到飞书
+    ↓
+用户在飞书收到报告
 ```
 
-## 开发构建
-
-### 编译二进制
-
-```bash
-go build -o github-reports cmd/server/main.go
-./github-reports --config=./configs/config.yaml
-```
-
-### 运行测试
-
-```bash
-go test ./...
-```
-
-## 使用示例
-
-### 场景 1：个人周报
-
-每周五自动生成个人本周的 GitHub 活动周报，并发送到企业微信。
-
-### 场景 2：团队周报
-
-配置多个 GitHub 账号，批量生成团队成员的周报。
-
-### 场景 3：临时查询
-
-通过 API 手动触发，查询特定时间段的活动情况。
-
-## 贡献指南
-
-欢迎提交 Issue 和 Pull Request！
-
-## License
-
-MIT License
+如果任何步骤失败，错误信息会自动发送到飞书。
 
 ## 相关链接
 
 - [GitHub API 文档](https://docs.github.com/en/rest)
-- [企业微信机器人文档](https://developer.work.weixin.qq.com/document/path/91770)
+- [DeepSeek API 文档](https://platform.deepseek.com/api-docs/)
 - [飞书机器人文档](https://open.feishu.cn/document/ukTMukTMukTM/ucTM5YjL3ETO24yNxkjN)

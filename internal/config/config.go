@@ -2,21 +2,24 @@ package config
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/viper"
 )
 
 type Config struct {
-	Server    ServerConfig     `mapstructure:"server"`
-	GitHub    GitHubConfig     `mapstructure:"github"`
-	LLM       LLMConfig        `mapstructure:"llm"`
-	Scheduler SchedulerConfig  `mapstructure:"scheduler"`
-	Notifiers NotifiersConfig  `mapstructure:"notifiers"`
+	Server    ServerConfig    `mapstructure:"server"`
+	GitHub    GitHubConfig    `mapstructure:"github"`
+	LLM       LLMConfig       `mapstructure:"llm"`
+	Notifiers NotifiersConfig `mapstructure:"notifiers"`
+	Webhook   WebhookConfig   `mapstructure:"webhook"`
 }
 
 type ServerConfig struct {
 	Port int `mapstructure:"port"`
+}
+
+type WebhookConfig struct {
+	Token string `mapstructure:"token"`
 }
 
 type GitHubConfig struct {
@@ -25,7 +28,7 @@ type GitHubConfig struct {
 
 type GitHubToken struct {
 	Token    string `mapstructure:"token"`
-	Username string `mapstructure:"username"` // Optional: required for scheduled tasks, not required for web queries
+	Username string `mapstructure:"username"` // 可选：如果不指定，则允许查询任何用户
 }
 
 type LLMConfig struct {
@@ -33,23 +36,11 @@ type LLMConfig struct {
 	APIKey         string `mapstructure:"api_key"`
 	Model          string `mapstructure:"model"`
 	PromptTemplate string `mapstructure:"prompt_template"`
-	BaseURL        string `mapstructure:"base_url"` // optional, for custom endpoints
-}
-
-type SchedulerConfig struct {
-	Enabled      bool          `mapstructure:"enabled"`
-	Cron         string        `mapstructure:"cron"`
-	DefaultSince time.Duration `mapstructure:"default_since"` // default: 7 days
+	BaseURL        string `mapstructure:"base_url"` // 可选，用于自定义端点
 }
 
 type NotifiersConfig struct {
-	WeChat WeChatConfig `mapstructure:"wechat"`
 	Feishu FeishuConfig `mapstructure:"feishu"`
-}
-
-type WeChatConfig struct {
-	Enabled    bool   `mapstructure:"enabled"`
-	WebhookURL string `mapstructure:"webhook_url"`
 }
 
 type FeishuConfig struct {
@@ -57,7 +48,7 @@ type FeishuConfig struct {
 	WebhookURL string `mapstructure:"webhook_url"`
 }
 
-// Load loads configuration from file
+// Load 从文件加载配置
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
 
@@ -72,9 +63,6 @@ func Load(configPath string) (*Config, error) {
 
 	// Set defaults
 	v.SetDefault("server.port", 8080)
-	v.SetDefault("scheduler.enabled", false)
-	v.SetDefault("scheduler.cron", "0 15 * * 5") // Friday 3PM
-	v.SetDefault("scheduler.default_since", 7*24*time.Hour) // 7 days
 	v.SetDefault("llm.provider", "deepseek")
 	v.SetDefault("llm.model", "deepseek-chat")
 	v.SetDefault("llm.base_url", "https://api.deepseek.com/v1")
@@ -91,7 +79,7 @@ func Load(configPath string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Validate validates the configuration
+// Validate 验证配置
 func (c *Config) Validate() error {
 	if len(c.GitHub.Tokens) == 0 {
 		return fmt.Errorf("at least one GitHub token is required")
@@ -101,8 +89,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("LLM API key is required")
 	}
 
-	if c.LLM.Provider != "openai" && c.LLM.Provider != "claude" && c.LLM.Provider != "deepseek" && c.LLM.Provider != "custom" {
-		return fmt.Errorf("invalid LLM provider: %s", c.LLM.Provider)
+	if c.LLM.Provider != "deepseek" {
+		return fmt.Errorf("only deepseek provider is supported, got: %s", c.LLM.Provider)
+	}
+
+	if c.Webhook.Token == "" {
+		return fmt.Errorf("webhook token is required")
 	}
 
 	return nil

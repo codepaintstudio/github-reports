@@ -12,88 +12,71 @@ import (
 
 	"github-reports/internal/api"
 	"github-reports/internal/config"
-	"github-reports/internal/scheduler"
 
 	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// Parse command line flags
-	configPath := flag.String("config", "", "Path to configuration file")
+	// 解析命令行参数
+	configPath := flag.String("config", "", "配置文件路径")
 	flag.Parse()
 
-	// Load configuration
+	// 加载配置
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("加载配置失败: %v", err)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("Invalid config: %v", err)
+		log.Fatalf("配置无效: %v", err)
 	}
 
-	log.Println("Configuration loaded successfully")
+	log.Println("配置加载成功")
 
-	// Create scheduler
-	sched, err := scheduler.NewScheduler(cfg)
-	if err != nil {
-		log.Fatalf("Failed to create scheduler: %v", err)
-	}
-
-	// Start scheduler
-	if err := sched.Start(); err != nil {
-		log.Fatalf("Failed to start scheduler: %v", err)
-	}
-
-	// Setup HTTP server
+	// 设置 HTTP 服务器
 	router := gin.Default()
 
-	// Create API handler
+	// 创建 API 处理器
 	handler := api.NewHandler(cfg)
 
-	// Serve static files from root
-	router.StaticFile("/", "./web/index.html")
-	router.Static("/static", "./web")
-
-	// Register routes
+	// 注册路由
 	v1 := router.Group("/api/v1")
 	{
-		v1.POST("/reports/generate", handler.GenerateReport)
-		v1.POST("/reports/generate-all", handler.GenerateAllReports)
+		// 健康检查 - 无需认证
 		v1.GET("/health", handler.Health)
+
+		// Webhook - 需要认证
+		v1.POST("/webhook", handler.AuthMiddleware(), handler.Webhook)
 	}
 
-	// Setup HTTP server
+	// 设置 HTTP 服务器
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: router,
 	}
 
-	// Start server in a goroutine
+	// 在 goroutine 中启动服务器
 	go func() {
-		log.Printf("Starting HTTP server on %s", srv.Addr)
+		log.Printf("在 %s 启动 HTTP 服务器", srv.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			log.Fatalf("启动服务器失败: %v", err)
 		}
 	}()
 
-	// Wait for interrupt signal
+	// 等待中断信号
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	log.Println("正在关闭服务器...")
 
-	// Stop scheduler
-	sched.Stop()
-
-	// Graceful shutdown
+	// 优雅关闭
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("Server forced to shutdown: %v", err)
+		log.Printf("服务器强制关闭: %v", err)
 	}
 
-	log.Println("Server exited")
+	log.Println("服务器已退出")
 }

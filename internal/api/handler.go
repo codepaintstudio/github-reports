@@ -1,7 +1,12 @@
 package api
 
 import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github-reports/internal/config"
@@ -13,67 +18,139 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Handler handles HTTP requests
+// Handler 处理 HTTP 请求
 type Handler struct {
-	config    *config.Config
-	notifiers []notifier.Notifier
+	config *config.Config
 }
 
-// NewHandler creates a new API handler
+// NewHandler 创建一个新的 API 处理器
 func NewHandler(cfg *config.Config) *Handler {
-	var notifiers []notifier.Notifier
-
-	if cfg.Notifiers.WeChat.Enabled {
-		notifiers = append(notifiers, notifier.NewWeChatNotifier(cfg.Notifiers.WeChat.WebhookURL))
-	}
-
-	if cfg.Notifiers.Feishu.Enabled {
-		notifiers = append(notifiers, notifier.NewFeishuNotifier(cfg.Notifiers.Feishu.WebhookURL))
-	}
-
 	return &Handler{
-		config:    cfg,
-		notifiers: notifiers,
+		config: cfg,
 	}
 }
 
-// GenerateReportRequest represents the request body for generating a report
-type GenerateReportRequest struct {
-	Username string `json:"username" binding:"required"`
-	Since    string `json:"since"`  // RFC3339 format
-	Until    string `json:"until"`  // RFC3339 format
-	Notify   bool   `json:"notify"` // Whether to send notifications
+// AuthMiddleware 检查 webhook 令牌
+func (h *Handler) AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		token := c.GetHeader("Authorization")
+
+		// 支持 "Bearer TOKEN" 和 "TOKEN" 格式
+		token = strings.TrimPrefix(token, "Bearer ")
+
+		if token != h.config.Webhook.Token {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
 }
 
-// GenerateReportResponse represents the response for generating a report
-type GenerateReportResponse struct {
-	Username string `json:"username"`
-	Report   string `json:"report"`
-	Since    string `json:"since"`
-	Until    string `json:"until"`
+// WebhookRequest 表示 webhook 请求体
+type WebhookRequest struct {
+	Content string `json:"content" binding:"required"`
 }
 
-// GenerateReport handles POST /api/v1/reports/generate
-func (h *Handler) GenerateReport(c *gin.Context) {
-	var req GenerateReportRequest
+// Webhook 处理 POST /api/v1/webhook
+// 工作流程：解析内容 -> 立即返回响应 -> 异步处理（提取用户名 -> 获取 GitHub 数据 -> 生成报告 -> 发送到飞书）
+func (h *Handler) Webhook(c *gin.Context) {
+	// 读取原始请求体
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		fmt.Printf("[Webhook] 读取请求体失败: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+		return
+	}
+
+	// 打印原始 JSON 请求体
+	fmt.Printf("[Webhook] 原始请求体 JSON: %s\n", string(bodyBytes))
+	fmt.Printf("[Webhook] Content-Type: %s\n", c.GetHeader("Content-Type"))
+
+	// 重新设置请求体供后续绑定使用
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	var req WebhookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("[Webhook] 解析请求失败: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// 打印解析后的请求体内容
+	fmt.Printf("[Webhook] 解析后的请求体: %+v\n", req)
+
 	log := func(message string) {
-		println("[GenerateReport]", req.Username, "-", message)
+		println("[Webhook]", message)
 	}
 
-	log("开始生成周报")
+	log("收到 webhook 请求")
+	log("内容: " + req.Content)
 
-	// Find GitHub token for the user
-	// Strategy:
-	// 1. If a token with matching username exists, use it
-	// 2. Otherwise, use the first available token (allows querying any user)
+	// 检查是否已配置飞书
+	if !h.config.Notifiers.Feishu.Enabled {
+		log("错误: 飞书通知未启用")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Feishu notification is not enabled"})
+		return
+	}
+
+	// 立即返回响应，避免飞书超时
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "accepted",
+		"message": "Request received, processing in background",
+	})
+
+	// 在后台异步处理
+	go h.processWebhookAsync(req.Content)
+}
+
+// processWebhookAsync 异步处理 webhook 请求
+func (h *Handler) processWebhookAsync(content string) {
+	log := func(message string) {
+		println("[Webhook-Async]", message)
+	}
+
+	// 使用新的 context，设置合理的超时时间（因为原请求的 context 已经结束）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// 向飞书发送错误的辅助函数
+	sendErrorToFeishu := func(errorMsg string) {
+		if h.config.Notifiers.Feishu.Enabled {
+			feishuNotifier := notifier.NewFeishuNotifier(h.config.Notifiers.Feishu.WebhookURL)
+			errorReport := fmt.Sprintf("# ❌ GitHub 周报生成失败\n\n**错误信息：**\n%s", errorMsg)
+			_ = feishuNotifier.Send(ctx, errorReport)
+		}
+	}
+
+	// 步骤 1: 使用 LLM 提取 GitHub 用户名
+	log("步骤 1: 使用 LLM 提取 GitHub 用户名...")
+	llmClient, err := llm.NewClient(h.config.LLM)
+	if err != nil {
+		errMsg := "创建 LLM 客户端失败: " + err.Error()
+		log("错误: " + errMsg)
+		sendErrorToFeishu(errMsg)
+		return
+	}
+
+	username, err := llmClient.ExtractGitHubUsername(ctx, content)
+	if err != nil {
+		errMsg := "提取 GitHub 用户名失败: " + err.Error()
+		log("错误: " + errMsg)
+		sendErrorToFeishu(errMsg)
+		return
+	}
+
+	// 清理用户名（去除空白字符和换行符）
+	username = strings.TrimSpace(username)
+	log("提取到的 GitHub 用户名: " + username)
+
+	// 步骤 2: 查找 GitHub 令牌
+	log("步骤 2: 查找 GitHub token...")
 	var token string
 	for _, t := range h.config.GitHub.Tokens {
-		if t.Username == req.Username {
+		if t.Username == username {
 			token = t.Token
 			log("找到匹配的 GitHub token (username: " + t.Username + ")")
 			break
@@ -82,175 +159,46 @@ func (h *Handler) GenerateReport(c *gin.Context) {
 
 	if token == "" && len(h.config.GitHub.Tokens) > 0 {
 		token = h.config.GitHub.Tokens[0].Token
-		log("使用默认 GitHub token 查询用户 " + req.Username)
+		log("使用默认 GitHub token 查询用户 " + username)
 	}
 
 	if token == "" {
-		log("错误: 未配置 GitHub token")
-		c.JSON(http.StatusNotFound, gin.H{"error": "No GitHub token configured"})
+		errMsg := "未配置 GitHub token"
+		log("错误: " + errMsg)
+		sendErrorToFeishu(errMsg)
 		return
 	}
 
-	// Parse time range
-	var since, until time.Time
-	var err error
-
-	if req.Since != "" {
-		since, err = time.Parse(time.RFC3339, req.Since)
-		if err != nil {
-			log("错误: 无效的开始时间格式")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid since time format"})
-			return
-		}
-	} else {
-		since = time.Now().Add(-7 * 24 * time.Hour) // Default to 7 days ago
-	}
-
-	if req.Until != "" {
-		until, err = time.Parse(time.RFC3339, req.Until)
-		if err != nil {
-			log("错误: 无效的结束时间格式")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid until time format"})
-			return
-		}
-	} else {
-		until = time.Now()
-	}
-
-	log("时间范围: " + since.Format("2006-01-02") + " ~ " + until.Format("2006-01-02"))
-
-	// Create clients
-	log("创建 GitHub 客户端...")
-	githubClient := github.NewClient(token)
-
-	log("创建 LLM 客户端...")
-	llmClient, err := llm.NewClient(h.config.LLM)
-	if err != nil {
-		log("错误: 创建 LLM 客户端失败 - " + err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create LLM client"})
-		return
-	}
-
-	// Create reporter and generate report
-	log("开始拉取 GitHub 活动数据...")
-	rep := reporter.NewReporter(githubClient, llmClient)
-	report, err := rep.GenerateReport(c.Request.Context(), req.Username, since, until)
-	if err != nil {
-		log("错误: 生成报告失败 - " + err.Error())
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	log("周报生成成功")
-
-	// Send notifications if requested
-	if req.Notify {
-		log("开始发送通知...")
-		for _, n := range h.notifiers {
-			if err := n.Send(c.Request.Context(), report); err != nil {
-				log("警告: 发送通知失败 - " + err.Error())
-				// Log error but don't fail the request
-				c.JSON(http.StatusOK, gin.H{
-					"warning": "failed to send notification: " + err.Error(),
-				})
-			} else {
-				log("通知发送成功")
-			}
-		}
-	}
-
-	log("完成")
-
-	c.JSON(http.StatusOK, GenerateReportResponse{
-		Username: req.Username,
-		Report:   report,
-		Since:    since.Format(time.RFC3339),
-		Until:    until.Format(time.RFC3339),
-	})
-}
-
-// GenerateAllReports handles POST /api/v1/reports/generate-all
-func (h *Handler) GenerateAllReports(c *gin.Context) {
-	var results []map[string]interface{}
-
-	println("[GenerateAllReports] 开始批量生成周报")
-
-	// Default time range: last 7 days
+	// 步骤 3: 拉取 GitHub 活动数据
+	log("步骤 3: 拉取 GitHub 活动数据...")
 	until := time.Now()
-	since := until.Add(-7 * 24 * time.Hour)
+	since := until.Add(-7 * 24 * time.Hour) // 默认为最近 7 天
 
-	println("[GenerateAllReports] 时间范围:", since.Format("2006-01-02"), "~", until.Format("2006-01-02"))
-	println("[GenerateAllReports] 配置的用户数量:", len(h.config.GitHub.Tokens))
-
-	// Generate report for each configured user
-	for i, tokenConfig := range h.config.GitHub.Tokens {
-		username := tokenConfig.Username
-		println("[GenerateAllReports] [", i+1, "/", len(h.config.GitHub.Tokens), "] 开始处理用户:", username)
-
-		result := map[string]interface{}{
-			"username": username,
-		}
-
-		// Create clients
-		println("[GenerateAllReports]", username, "- 创建 GitHub 客户端...")
-		githubClient := github.NewClient(tokenConfig.Token)
-
-		println("[GenerateAllReports]", username, "- 创建 LLM 客户端...")
-		llmClient, err := llm.NewClient(h.config.LLM)
-		if err != nil {
-			errMsg := "failed to create LLM client: " + err.Error()
-			println("[GenerateAllReports]", username, "- 错误:", errMsg)
-			result["error"] = errMsg
-			results = append(results, result)
-			continue
-		}
-
-		// Generate report
-		println("[GenerateAllReports]", username, "- 开始拉取 GitHub 活动数据...")
-		rep := reporter.NewReporter(githubClient, llmClient)
-		report, err := rep.GenerateReport(c.Request.Context(), username, since, until)
-		if err != nil {
-			errMsg := err.Error()
-			println("[GenerateAllReports]", username, "- 错误:", errMsg)
-			result["error"] = errMsg
-			results = append(results, result)
-			continue
-		}
-
-		println("[GenerateAllReports]", username, "- 周报生成成功")
-
-		result["report"] = report
-		result["since"] = since.Format(time.RFC3339)
-		result["until"] = until.Format(time.RFC3339)
-		result["success"] = true
-
-		// Send notifications
-		if len(h.notifiers) > 0 {
-			println("[GenerateAllReports]", username, "- 开始发送通知...")
-			for _, n := range h.notifiers {
-				if err := n.Send(c.Request.Context(), report); err != nil {
-					errMsg := err.Error()
-					println("[GenerateAllReports]", username, "- 通知发送失败:", errMsg)
-					result["notification_error"] = errMsg
-				} else {
-					println("[GenerateAllReports]", username, "- 通知发送成功")
-				}
-			}
-		}
-
-		results = append(results, result)
-		println("[GenerateAllReports]", username, "- 完成")
+	githubClient := github.NewClient(token)
+	rep := reporter.NewReporter(githubClient, llmClient)
+	report, err := rep.GenerateReport(ctx, username, since, until)
+	if err != nil {
+		errMsg := fmt.Sprintf("生成 %s 的周报失败: %s", username, err.Error())
+		log("错误: " + errMsg)
+		sendErrorToFeishu(errMsg)
+		return
 	}
 
-	println("[GenerateAllReports] 全部完成，成功:", len(results), "个用户")
+	log("报告生成成功")
 
-	c.JSON(http.StatusOK, gin.H{
-		"results": results,
-		"total":   len(results),
-	})
+	// 步骤 4: 发送到飞书
+	log("步骤 4: 发送到飞书...")
+	feishuNotifier := notifier.NewFeishuNotifier(h.config.Notifiers.Feishu.WebhookURL)
+	if err := feishuNotifier.Send(ctx, report); err != nil {
+		errMsg := "发送飞书通知失败: " + err.Error()
+		log("错误: " + errMsg)
+		return
+	}
+
+	log("成功发送到飞书")
 }
 
-// Health handles GET /api/v1/health
+// Health 处理 GET /api/v1/health
 func (h *Handler) Health(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "ok",

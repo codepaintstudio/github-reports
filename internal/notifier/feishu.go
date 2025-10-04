@@ -9,13 +9,13 @@ import (
 	"net/http"
 )
 
-// FeishuNotifier sends notifications to Feishu (Lark)
+// FeishuNotifier 向飞书 (Lark) 发送通知
 type FeishuNotifier struct {
 	webhookURL string
 	client     *http.Client
 }
 
-// NewFeishuNotifier creates a new Feishu notifier
+// NewFeishuNotifier 创建一个新的飞书通知器
 func NewFeishuNotifier(webhookURL string) *FeishuNotifier {
 	return &FeishuNotifier{
 		webhookURL: webhookURL,
@@ -30,7 +30,7 @@ type feishuMessage struct {
 	} `json:"content"`
 }
 
-// Send sends a notification to Feishu
+// Send 向飞书发送通知
 func (f *FeishuNotifier) Send(ctx context.Context, content string) error {
 	msg := feishuMessage{
 		MsgType: "text",

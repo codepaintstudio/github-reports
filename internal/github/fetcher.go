@@ -8,17 +8,17 @@ import (
 	"github.com/google/go-github/v60/github"
 )
 
-// Fetcher fetches GitHub activities
+// Fetcher 获取 GitHub 活动
 type Fetcher struct {
 	client *Client
 }
 
-// NewFetcher creates a new Fetcher
+// NewFetcher 创建一个新的 Fetcher
 func NewFetcher(client *Client) *Fetcher {
 	return &Fetcher{client: client}
 }
 
-// FetchActivities fetches all activities for a user within the time range
+// FetchActivities 获取指定时间范围内用户的所有活动
 func (f *Fetcher) FetchActivities(ctx context.Context, username string, since, until time.Time) (*UserActivity, error) {
 	activity := &UserActivity{
 		Username: username,
@@ -45,7 +45,7 @@ func (f *Fetcher) FetchActivities(ctx context.Context, username string, since, u
 	return activity, nil
 }
 
-// fetchFromEvents fetches all activities from user's event timeline in a single pass
+// fetchFromEvents 一次性从用户事件时间线获取所有活动
 func (f *Fetcher) fetchFromEvents(ctx context.Context, username string, since, until time.Time) ([]CommitInfo, []PullRequestInfo, []IssueInfo, []ReviewInfo, error) {
 	var commits []CommitInfo
 	var prs []PullRequestInfo

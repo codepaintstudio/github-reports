@@ -10,14 +10,14 @@ import (
 	"github-reports/internal/llm"
 )
 
-// Reporter generates reports from GitHub activities
+// Reporter 从 GitHub 活动生成报告
 type Reporter struct {
 	githubClient *github.Client
 	fetcher      *github.Fetcher
 	llmClient    llm.Client
 }
 
-// NewReporter creates a new Reporter
+// NewReporter 创建一个新的 Reporter
 func NewReporter(githubClient *github.Client, llmClient llm.Client) *Reporter {
 	return &Reporter{
 		githubClient: githubClient,
@@ -26,7 +26,7 @@ func NewReporter(githubClient *github.Client, llmClient llm.Client) *Reporter {
 	}
 }
 
-// GenerateReport generates a weekly report for a user
+// GenerateReport 为用户生成周报
 func (r *Reporter) GenerateReport(ctx context.Context, username string, since, until time.Time) (string, error) {
 	// Fetch GitHub activities
 	println("[Reporter]", username, "- 正在拉取 GitHub 活动数据...")
@@ -39,6 +39,16 @@ func (r *Reporter) GenerateReport(ctx context.Context, username string, since, u
 	stats := activity.Statistics()
 	println("[Reporter]", username, "- 数据统计: Commits:", stats["total_commits"], "PRs:", stats["total_prs"], "Issues:", stats["total_issues"], "Reviews:", stats["total_reviews"])
 
+	// Check if we have any data
+	totalActivities := stats["total_commits"].(int) + stats["total_prs"].(int) + stats["total_issues"].(int) + stats["total_reviews"].(int)
+	if totalActivities == 0 {
+		println("[Reporter]", username, "- 警告: 该用户在指定时间范围内没有任何活动")
+		return "", fmt.Errorf("用户 %s 在 %s ~ %s 期间没有任何 GitHub 活动",
+			username,
+			since.Format("2006-01-02"),
+			until.Format("2006-01-02"))
+	}
+
 	// Format activity data for LLM
 	println("[Reporter]", username, "- 正在格式化活动数据...")
 	activityData, err := r.formatActivityData(activity)
@@ -46,6 +56,8 @@ func (r *Reporter) GenerateReport(ctx context.Context, username string, since, u
 		println("[Reporter]", username, "- 格式化数据失败:", err.Error())
 		return "", fmt.Errorf("failed to format activity data: %w", err)
 	}
+
+	println("[Reporter]", username, "- 格式化后的数据长度:", len(activityData), "字符")
 
 	// Generate report using LLM
 	println("[Reporter]", username, "- 正在调用 LLM 生成周报...")
@@ -60,7 +72,7 @@ func (r *Reporter) GenerateReport(ctx context.Context, username string, since, u
 	return report, nil
 }
 
-// formatActivityData formats activity data as a structured string for LLM
+// formatActivityData 将活动数据格式化为 LLM 可用的结构化字符串
 func (r *Reporter) formatActivityData(activity *github.UserActivity) (string, error) {
 	data := map[string]interface{}{
 		"username":      activity.Username,

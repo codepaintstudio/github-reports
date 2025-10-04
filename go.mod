@@ -7,7 +7,6 @@ toolchain go1.24.5
 require (
 	github.com/gin-gonic/gin v1.11.0
 	github.com/google/go-github/v60 v60.0.0
-	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.18.2
 	golang.org/x/oauth2 v0.18.0
 )

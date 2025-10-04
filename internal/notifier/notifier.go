@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// Notifier is the interface for sending notifications
+// Notifier 是发送通知的接口
 type Notifier interface {
 	Send(ctx context.Context, content string) error
 }
