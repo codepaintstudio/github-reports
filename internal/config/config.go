@@ -25,7 +25,7 @@ type GitHubConfig struct {
 
 type GitHubToken struct {
 	Token    string `mapstructure:"token"`
-	Username string `mapstructure:"username"`
+	Username string `mapstructure:"username"` // Optional: required for scheduled tasks, not required for web queries
 }
 
 type LLMConfig struct {

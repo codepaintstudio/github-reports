@@ -68,21 +68,28 @@ func (h *Handler) GenerateReport(c *gin.Context) {
 	log("开始生成周报")
 
 	// Find GitHub token for the user
+	// Strategy:
+	// 1. If a token with matching username exists, use it
+	// 2. Otherwise, use the first available token (allows querying any user)
 	var token string
 	for _, t := range h.config.GitHub.Tokens {
 		if t.Username == req.Username {
 			token = t.Token
+			log("找到匹配的 GitHub token (username: " + t.Username + ")")
 			break
 		}
 	}
 
-	if token == "" {
-		log("错误: 未找到 GitHub token")
-		c.JSON(http.StatusNotFound, gin.H{"error": "GitHub token not found for user"})
-		return
+	if token == "" && len(h.config.GitHub.Tokens) > 0 {
+		token = h.config.GitHub.Tokens[0].Token
+		log("使用默认 GitHub token 查询用户 " + req.Username)
 	}
 
-	log("已找到 GitHub token")
+	if token == "" {
+		log("错误: 未配置 GitHub token")
+		c.JSON(http.StatusNotFound, gin.H{"error": "No GitHub token configured"})
+		return
+	}
 
 	// Parse time range
 	var since, until time.Time

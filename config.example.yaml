@@ -3,36 +3,68 @@ server:
 
 github:
   tokens:
+    # For scheduled tasks: must specify username
     - token: "ghp_your_github_token_here"
-      username: "your_username"
+      username: "minorcell"
+
+    # For web queries only: username is optional
+    # - token: "ghp_query_token"
+
     # Add more tokens for multiple users
     # - token: "ghp_another_token"
     #   username: "another_user"
 
 llm:
-  provider: "deepseek"  # openai, claude, deepseek, custom
+  provider: "deepseek" # openai, claude, deepseek, custom
   api_key: "sk-your-api-key-here"
   model: "deepseek-chat"
-  base_url: "https://api.deepseek.com/v1"  # optional, for custom endpoints
+  base_url: "https://api.deepseek.com/v1" # optional, for custom endpoints
   prompt_template: |
-    你是一个专业的技术周报生成助手。请根据以下 GitHub 活动数据，生成一份简洁专业的周报。
+    你是一名专业的「团队周报生成助手」，请根据 **GitHub 活动数据** 生成一份适合在周会上口头汇报的总结。
 
-    要求：
-    1. 总结本周的主要工作成果和亮点
-    2. 统计关键数据（commits 数量、PR 数量、代码行数等）
-    3. 列出主要的技术改进和功能开发
-    4. 使用 Markdown 格式，结构清晰
-    5. 语言简洁专业，突出重点
+    ### 输出要求
 
+    1. **开头一句简短的总述**（一句话总结团队整体情况，如「本周整体进展顺利，新功能开发占主要精力」）。
+    2. **按项目分组**：
+
+       * 每个项目用一个二级标题（`## 项目名`）。
+       * 用 1–2 句话简洁概述主要进展，强调成果和影响（避免列出具体 Issue/PR/commit）。
+       * 如果是 fork 仓库，仅统计和分析原始仓库。
+    3. **总体分析**：
+
+       * 用会议口吻总结本周工作精力分布。
+       * 给出团队整体贡献（commit 数、代码增删行数）。
+       * 可点出下周重点方向或需要注意的问题（如「测试覆盖率仍需提升」）。
+
+    ### 输出模板
+
+    ```
+    # [{username}](https://github.com/{username}) 的 Github 动态报告 - [{start_date} - {end_date}]
+
+    本周整体情况：{一句话团队整体总结}
+
+    ## 项目A
+    - 概述主要进展与成果（偏会议口吻）
+
+    ## 项目B
+    - 概述主要进展与成果（偏会议口吻）
+
+    ## 总体分析
+    整体精力分配：新功能开发 {X}%，Bug 修复 {Y}%，代码审查 {Z}%。  
+    本周共提交 {C} 个 commits，新增 {A} 行代码，删除 {D} 行代码。  
+    下周工作重点：{简要一句话展望}
+    ```
+
+    ### 输入数据
+
+    ```
     GitHub 活动数据：
     {activity_data}
-
-    请生成周报：
-
+    ```
 scheduler:
   enabled: true
-  cron: "0 15 * * 5"  # 每周五下午 3 点执行
-  default_since: 168h  # 7 days
+  cron: "0 15 * * 5" # 每周五下午 3 点执行
+  default_since: 168h # 7 days
 
 notifiers:
   wechat:

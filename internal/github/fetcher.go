@@ -26,58 +26,40 @@ func (f *Fetcher) FetchActivities(ctx context.Context, username string, since, u
 		Until:    until,
 	}
 
-	// Fetch commits
-	println("[Fetcher]", username, "- 正在拉取 Commits...")
-	commits, err := f.fetchCommits(ctx, username, since, until)
+	println("[Fetcher]", username, "- 正在拉取用户活动...")
+
+	// Fetch all events from user's timeline (single API call)
+	commits, prs, issues, reviews, err := f.fetchFromEvents(ctx, username, since, until)
 	if err != nil {
-		println("[Fetcher]", username, "- 拉取 Commits 失败:", err.Error())
-		return nil, fmt.Errorf("failed to fetch commits: %w", err)
+		println("[Fetcher]", username, "- 拉取活动失败:", err.Error())
+		return nil, fmt.Errorf("failed to fetch activities: %w", err)
 	}
+
 	activity.Commits = commits
-	println("[Fetcher]", username, "- 找到", len(commits), "个 Commits")
-
-	// Fetch pull requests
-	println("[Fetcher]", username, "- 正在拉取 Pull Requests...")
-	prs, err := f.fetchPullRequests(ctx, username, since, until)
-	if err != nil {
-		println("[Fetcher]", username, "- 拉取 Pull Requests 失败:", err.Error())
-		return nil, fmt.Errorf("failed to fetch pull requests: %w", err)
-	}
 	activity.PullRequests = prs
-	println("[Fetcher]", username, "- 找到", len(prs), "个 Pull Requests")
-
-	// Fetch issues
-	println("[Fetcher]", username, "- 正在拉取 Issues...")
-	issues, err := f.fetchIssues(ctx, username, since, until)
-	if err != nil {
-		println("[Fetcher]", username, "- 拉取 Issues 失败:", err.Error())
-		return nil, fmt.Errorf("failed to fetch issues: %w", err)
-	}
 	activity.Issues = issues
-	println("[Fetcher]", username, "- 找到", len(issues), "个 Issues")
-
-	// Fetch reviews
-	println("[Fetcher]", username, "- 正在拉取 Code Reviews...")
-	reviews, err := f.fetchReviews(ctx, username, since, until)
-	if err != nil {
-		println("[Fetcher]", username, "- 拉取 Code Reviews 失败:", err.Error())
-		return nil, fmt.Errorf("failed to fetch reviews: %w", err)
-	}
 	activity.Reviews = reviews
-	println("[Fetcher]", username, "- 找到", len(reviews), "个 Code Reviews")
+
+	println("[Fetcher]", username, "- 找到", len(commits), "个 Commits,", len(prs), "个 Pull Requests,", len(issues), "个 Issues,", len(reviews), "个 Code Reviews")
 
 	return activity, nil
 }
 
-// fetchCommits fetches commits from user's events
-func (f *Fetcher) fetchCommits(ctx context.Context, username string, since, until time.Time) ([]CommitInfo, error) {
+// fetchFromEvents fetches all activities from user's event timeline in a single pass
+func (f *Fetcher) fetchFromEvents(ctx context.Context, username string, since, until time.Time) ([]CommitInfo, []PullRequestInfo, []IssueInfo, []ReviewInfo, error) {
 	var commits []CommitInfo
+	var prs []PullRequestInfo
+	var issues []IssueInfo
+	var reviews []ReviewInfo
+
 	opts := &github.ListOptions{PerPage: 100}
+	prMap := make(map[string]bool)   // Track PRs to avoid duplicates
+	issueMap := make(map[string]bool) // Track Issues to avoid duplicates
 
 	for {
 		events, resp, err := f.client.client.Activity.ListEventsPerformedByUser(ctx, username, false, opts)
 		if err != nil {
-			return nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		for _, event := range events {
@@ -89,8 +71,10 @@ func (f *Fetcher) fetchCommits(ctx context.Context, username string, since, unti
 				continue
 			}
 
-			// Process PushEvent
-			if *event.Type == "PushEvent" {
+			eventType := getStringValue(event.Type)
+
+			// Process PushEvent for commits
+			if eventType == "PushEvent" {
 				payload, err := event.ParsePayload()
 				if err != nil {
 					continue
@@ -111,8 +95,6 @@ func (f *Fetcher) fetchCommits(ctx context.Context, username string, since, unti
 						continue
 					}
 
-					// Skip commits not authored by the target user
-					// Check both author name and login
 					authorName := getStringValue(commit.Author.Name)
 
 					// Fetch detailed commit info to verify authorship
@@ -167,161 +149,110 @@ func (f *Fetcher) fetchCommits(ctx context.Context, username string, since, unti
 					}
 				}
 			}
-		}
 
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return commits, nil
-}
-
-// fetchPullRequests fetches pull requests created by the user
-func (f *Fetcher) fetchPullRequests(ctx context.Context, username string, since, until time.Time) ([]PullRequestInfo, error) {
-	var prs []PullRequestInfo
-
-	// Search for PRs created by the user
-	query := fmt.Sprintf("author:%s created:%s..%s",
-		username,
-		since.Format("2006-01-02"),
-		until.Format("2006-01-02"),
-	)
-
-	opts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
-
-	for {
-		result, resp, err := f.client.client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, issue := range result.Issues {
-			if issue.PullRequestLinks == nil {
-				continue
-			}
-
-			pr := PullRequestInfo{
-				Number:    getIntValue(issue.Number),
-				Title:     getStringValue(issue.Title),
-				URL:       getStringValue(issue.HTMLURL),
-				State:     getStringValue(issue.State),
-				CreatedAt: getTimeValue(issue.CreatedAt),
-				Comments:  getIntValue(issue.Comments),
-			}
-
-			if issue.Repository != nil && issue.Repository.FullName != nil {
-				pr.Repo = *issue.Repository.FullName
-			}
-
-			if issue.ClosedAt != nil {
-				pr.MergedAt = getTimePointer(issue.ClosedAt)
-			}
-
-			// Fetch detailed PR info for additions/deletions
-			if pr.Repo != "" {
-				owner, repoName := parseRepoName(pr.Repo)
-				if owner != "" && repoName != "" {
-					prDetail, _, err := f.client.client.PullRequests.Get(ctx, owner, repoName, pr.Number)
-					if err == nil {
-						pr.Additions = getIntValue(prDetail.Additions)
-						pr.Deletions = getIntValue(prDetail.Deletions)
-						if prDetail.MergedAt != nil {
-							pr.MergedAt = getTimePointer(prDetail.MergedAt)
-						}
-					}
+			// Process PullRequestEvent
+			if eventType == "PullRequestEvent" {
+				payload, err := event.ParsePayload()
+				if err != nil {
+					continue
 				}
+
+				prPayload, ok := payload.(*github.PullRequestEvent)
+				if !ok || prPayload.PullRequest == nil {
+					continue
+				}
+
+				pr := prPayload.PullRequest
+
+				// Only process PRs created by the target user
+				if pr.User == nil || pr.User.Login == nil || *pr.User.Login != username {
+					continue
+				}
+
+				repo := ""
+				if event.Repo != nil && event.Repo.Name != nil {
+					repo = *event.Repo.Name
+				}
+
+				prKey := fmt.Sprintf("%s#%d", repo, getIntValue(pr.Number))
+				if prMap[prKey] {
+					continue // Skip duplicates
+				}
+				prMap[prKey] = true
+
+				prInfo := PullRequestInfo{
+					Number:    getIntValue(pr.Number),
+					Title:     getStringValue(pr.Title),
+					URL:       getStringValue(pr.HTMLURL),
+					State:     getStringValue(pr.State),
+					Repo:      repo,
+					CreatedAt: getTimeValue(pr.CreatedAt),
+					Comments:  getIntValue(pr.Comments),
+					Additions: getIntValue(pr.Additions),
+					Deletions: getIntValue(pr.Deletions),
+				}
+
+				if pr.MergedAt != nil {
+					prInfo.MergedAt = getTimePointer(pr.MergedAt)
+				}
+
+				prs = append(prs, prInfo)
 			}
 
-			prs = append(prs, pr)
-		}
+			// Process IssuesEvent
+			if eventType == "IssuesEvent" {
+				payload, err := event.ParsePayload()
+				if err != nil {
+					continue
+				}
 
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
+				issuePayload, ok := payload.(*github.IssuesEvent)
+				if !ok || issuePayload.Issue == nil {
+					continue
+				}
 
-	return prs, nil
-}
+				issue := issuePayload.Issue
 
-// fetchIssues fetches issues created by the user
-func (f *Fetcher) fetchIssues(ctx context.Context, username string, since, until time.Time) ([]IssueInfo, error) {
-	var issues []IssueInfo
+				// Only process issues created by the target user
+				if issue.User == nil || issue.User.Login == nil || *issue.User.Login != username {
+					continue
+				}
 
-	query := fmt.Sprintf("author:%s type:issue created:%s..%s",
-		username,
-		since.Format("2006-01-02"),
-		until.Format("2006-01-02"),
-	)
+				// Skip if it's actually a PR
+				if issue.PullRequestLinks != nil {
+					continue
+				}
 
-	opts := &github.SearchOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	}
+				repo := ""
+				if event.Repo != nil && event.Repo.Name != nil {
+					repo = *event.Repo.Name
+				}
 
-	for {
-		result, resp, err := f.client.client.Search.Issues(ctx, query, opts)
-		if err != nil {
-			return nil, err
-		}
+				issueKey := fmt.Sprintf("%s#%d", repo, getIntValue(issue.Number))
+				if issueMap[issueKey] {
+					continue // Skip duplicates
+				}
+				issueMap[issueKey] = true
 
-		for _, issue := range result.Issues {
-			if issue.PullRequestLinks != nil {
-				continue // Skip PRs
+				issueInfo := IssueInfo{
+					Number:    getIntValue(issue.Number),
+					Title:     getStringValue(issue.Title),
+					URL:       getStringValue(issue.HTMLURL),
+					State:     getStringValue(issue.State),
+					Repo:      repo,
+					CreatedAt: getTimeValue(issue.CreatedAt),
+					Comments:  getIntValue(issue.Comments),
+				}
+
+				if issue.ClosedAt != nil {
+					issueInfo.ClosedAt = getTimePointer(issue.ClosedAt)
+				}
+
+				issues = append(issues, issueInfo)
 			}
 
-			info := IssueInfo{
-				Number:    getIntValue(issue.Number),
-				Title:     getStringValue(issue.Title),
-				URL:       getStringValue(issue.HTMLURL),
-				State:     getStringValue(issue.State),
-				CreatedAt: getTimeValue(issue.CreatedAt),
-				Comments:  getIntValue(issue.Comments),
-			}
-
-			if issue.Repository != nil && issue.Repository.FullName != nil {
-				info.Repo = *issue.Repository.FullName
-			}
-
-			if issue.ClosedAt != nil {
-				info.ClosedAt = getTimePointer(issue.ClosedAt)
-			}
-
-			issues = append(issues, info)
-		}
-
-		if resp.NextPage == 0 {
-			break
-		}
-		opts.Page = resp.NextPage
-	}
-
-	return issues, nil
-}
-
-// fetchReviews fetches code reviews by the user
-func (f *Fetcher) fetchReviews(ctx context.Context, username string, since, until time.Time) ([]ReviewInfo, error) {
-	var reviews []ReviewInfo
-	opts := &github.ListOptions{PerPage: 100}
-
-	for {
-		events, resp, err := f.client.client.Activity.ListEventsPerformedByUser(ctx, username, false, opts)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, event := range events {
-			if event.CreatedAt == nil {
-				continue
-			}
-			if event.CreatedAt.Before(since) || event.CreatedAt.After(until) {
-				continue
-			}
-
-			if *event.Type == "PullRequestReviewEvent" {
+			// Process PullRequestReviewEvent
+			if eventType == "PullRequestReviewEvent" {
 				payload, err := event.ParsePayload()
 				if err != nil {
 					continue
@@ -371,7 +302,7 @@ func (f *Fetcher) fetchReviews(ctx context.Context, username string, since, unti
 		opts.Page = resp.NextPage
 	}
 
-	return reviews, nil
+	return commits, prs, issues, reviews, nil
 }
 
 // Helper functions

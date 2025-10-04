@@ -48,8 +48,13 @@ func (s *Scheduler) Start() error {
 		return nil
 	}
 
-	// Add scheduled job for each GitHub token
+	// Add scheduled job for each GitHub token that has a username
 	for _, token := range s.config.GitHub.Tokens {
+		if token.Username == "" {
+			log.Printf("Skipping token without username for scheduled tasks")
+			continue
+		}
+
 		token := token // Capture loop variable
 		_, err := s.cron.AddFunc(s.config.Scheduler.Cron, func() {
 			s.runScheduledReport(token)
@@ -57,6 +62,7 @@ func (s *Scheduler) Start() error {
 		if err != nil {
 			return fmt.Errorf("failed to add cron job: %w", err)
 		}
+		log.Printf("Scheduled report task added for user: %s", token.Username)
 	}
 
 	s.cron.Start()

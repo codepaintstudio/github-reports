@@ -3,7 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitHub 周报生成器</title>
+    <title>GitHub Reports Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
@@ -12,104 +15,127 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'JetBrains Mono', 'Courier New', monospace;
+            background: #0a0e14;
+            color: #d4d4d4;
             min-height: 100vh;
             padding: 20px;
+            line-height: 1.6;
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1000px;
             margin: 0 auto;
         }
 
         .header {
-            text-align: center;
-            color: white;
             margin-bottom: 30px;
+            border: 2px solid #00ff41;
+            padding: 20px;
+            background: rgba(0, 255, 65, 0.05);
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.2);
         }
 
         .header h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
+            font-size: 1.8em;
+            margin-bottom: 8px;
+            color: #00ff41;
+            text-shadow: 0 0 10px rgba(0, 255, 65, 0.5);
         }
 
         .header p {
-            font-size: 1.1em;
-            opacity: 0.9;
+            font-size: 0.9em;
+            color: #888;
+        }
+
+        .terminal-prompt {
+            color: #00ff41;
+            margin-right: 8px;
         }
 
         .card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-            padding: 30px;
+            background: #1a1f2e;
+            border: 1px solid #2d3748;
+            border-radius: 6px;
+            padding: 25px;
             margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
 
         .form-group {
-            margin-bottom: 20px;
+            margin-bottom: 18px;
         }
 
         label {
             display: block;
-            font-weight: 600;
+            font-weight: 500;
             margin-bottom: 8px;
-            color: #333;
+            color: #00ff41;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         input[type="text"],
         input[type="datetime-local"],
         select {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #e1e8ed;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
+            padding: 12px 14px;
+            background: #0a0e14;
+            border: 1px solid #2d3748;
+            border-radius: 4px;
+            color: #d4d4d4;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            transition: all 0.3s;
         }
 
         input[type="text"]:focus,
         input[type="datetime-local"]:focus,
         select:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #00ff41;
+            box-shadow: 0 0 0 2px rgba(0, 255, 65, 0.1);
         }
 
         .checkbox-group {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
         input[type="checkbox"] {
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             cursor: pointer;
+            accent-color: #00ff41;
         }
 
         .btn {
             width: 100%;
             padding: 14px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 16px;
+            background: #00ff41;
+            color: #0a0e14;
+            border: 2px solid #00ff41;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: all 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            background: transparent;
+            color: #00ff41;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
         }
 
         .btn:disabled {
-            opacity: 0.6;
+            opacity: 0.4;
             cursor: not-allowed;
-            transform: none;
         }
 
         .result {
@@ -122,50 +148,58 @@
 
         .result h3 {
             margin-bottom: 15px;
-            color: #333;
+            color: #00ff41;
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
 
         .report-content {
-            background: #f7f9fc;
+            background: #0a0e14;
             padding: 20px;
-            border-radius: 8px;
+            border: 1px solid #2d3748;
+            border-radius: 4px;
             white-space: pre-wrap;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            line-height: 1.6;
-            max-height: 500px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.8;
+            max-height: 600px;
             overflow-y: auto;
+            color: #d4d4d4;
         }
 
         .error {
-            background: #fee;
-            color: #c33;
+            background: rgba(255, 82, 82, 0.1);
+            color: #ff5252;
             padding: 15px;
-            border-radius: 8px;
+            border-left: 4px solid #ff5252;
+            border-radius: 4px;
             margin-top: 15px;
         }
 
         .success {
-            background: #efe;
-            color: #3c3;
+            background: rgba(0, 255, 65, 0.1);
+            color: #00ff41;
             padding: 15px;
-            border-radius: 8px;
+            border-left: 4px solid #00ff41;
+            border-radius: 4px;
             margin-top: 15px;
         }
 
         .loading {
             text-align: center;
-            padding: 20px;
+            padding: 30px;
         }
 
         .spinner {
-            border: 3px solid #f3f3f3;
-            border-top: 3px solid #667eea;
+            border: 3px solid #2d3748;
+            border-top: 3px solid #00ff41;
             border-radius: 50%;
-            width: 40px;
-            height: 40px;
+            width: 50px;
+            height: 50px;
             animation: spin 1s linear infinite;
             margin: 0 auto;
+            box-shadow: 0 0 20px rgba(0, 255, 65, 0.3);
         }
 
         @keyframes spin {
@@ -175,131 +209,187 @@
 
         .time-presets {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             margin-top: 10px;
+            flex-wrap: wrap;
         }
 
         .preset-btn {
-            padding: 6px 12px;
-            background: #e1e8ed;
-            border: none;
-            border-radius: 6px;
+            padding: 8px 14px;
+            background: #0a0e14;
+            border: 1px solid #2d3748;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 13px;
-            transition: background 0.2s;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #888;
+            transition: all 0.2s;
         }
 
         .preset-btn:hover {
-            background: #d1d8dd;
+            border-color: #00ff41;
+            color: #00ff41;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
         }
 
         .api-info {
-            background: #fff8e1;
+            background: rgba(0, 255, 65, 0.05);
+            border: 1px solid #2d3748;
             padding: 15px;
-            border-radius: 8px;
+            border-radius: 4px;
             margin-bottom: 20px;
+            font-size: 13px;
         }
 
         .api-info code {
-            background: #ffe0b2;
-            padding: 2px 6px;
-            border-radius: 4px;
-            font-family: 'Courier New', monospace;
+            background: #0a0e14;
+            color: #00ff41;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .api-info button {
+            background: transparent;
+            border: 1px solid #2d3748;
+            color: #888;
+            padding: 4px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .api-info button:hover {
+            border-color: #00ff41;
+            color: #00ff41;
         }
 
         .btn-secondary {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            background: transparent;
+            border: 2px solid #ff9500;
+            color: #ff9500;
             margin-top: 10px;
+        }
+
+        .btn-secondary:hover {
+            background: #ff9500;
+            color: #0a0e14;
+            box-shadow: 0 0 20px rgba(255, 149, 0, 0.3);
         }
 
         .user-result {
             margin-bottom: 20px;
             padding: 15px;
-            background: #f7f9fc;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
+            background: #1a1f2e;
+            border-radius: 4px;
+            border-left: 4px solid #00ff41;
         }
 
         .user-result.error {
-            border-left-color: #f5576c;
+            border-left-color: #ff5252;
         }
 
         .user-result h4 {
             margin-bottom: 10px;
-            color: #333;
+            color: #00ff41;
+            font-size: 0.95em;
         }
 
         .user-report {
-            background: white;
-            padding: 10px;
+            background: #0a0e14;
+            padding: 15px;
+            border: 1px solid #2d3748;
             border-radius: 4px;
-            font-family: 'Courier New', monospace;
-            font-size: 13px;
-            max-height: 300px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            max-height: 400px;
             overflow-y: auto;
             white-space: pre-wrap;
+            line-height: 1.7;
+            color: #d4d4d4;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0a0e14;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2d3748;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00ff41;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>📊 GitHub 周报生成器</h1>
-            <p>自动生成您的 GitHub 活动周报</p>
+            <h1><span class="terminal-prompt">$</span> GitHub Reports Terminal</h1>
+            <p><span class="terminal-prompt">></span> Generate GitHub activity reports with AI-powered insights</p>
         </div>
 
         <div class="card">
             <div class="api-info">
-                <strong>API 地址：</strong> <code id="apiUrl">http://localhost:8080</code>
-                <button onclick="editApiUrl()" style="margin-left: 10px; padding: 4px 10px; cursor: pointer;">修改</button>
+                <strong style="color: #888;">API Endpoint:</strong> <code id="apiUrl">http://localhost:8080</code>
+                <button onclick="editApiUrl()" style="margin-left: 10px;">EDIT</button>
             </div>
 
             <form id="reportForm">
                 <div class="form-group">
-                    <label for="username">GitHub 用户名 *</label>
-                    <input type="text" id="username" name="username" required placeholder="输入您的 GitHub 用户名">
+                    <label for="username"><span class="terminal-prompt">></span> GitHub Username</label>
+                    <input type="text" id="username" name="username" required placeholder="minorcell">
                 </div>
 
                 <div class="form-group">
-                    <label for="since">开始时间</label>
+                    <label for="since"><span class="terminal-prompt">></span> Start Date</label>
                     <input type="datetime-local" id="since" name="since">
                     <div class="time-presets">
-                        <button type="button" class="preset-btn" onclick="setTimeRange(7)">最近 7 天</button>
-                        <button type="button" class="preset-btn" onclick="setTimeRange(14)">最近 14 天</button>
-                        <button type="button" class="preset-btn" onclick="setTimeRange(30)">最近 30 天</button>
+                        <button type="button" class="preset-btn" onclick="setTimeRange(7)">LAST 7 DAYS</button>
+                        <button type="button" class="preset-btn" onclick="setTimeRange(14)">LAST 14 DAYS</button>
+                        <button type="button" class="preset-btn" onclick="setTimeRange(30)">LAST 30 DAYS</button>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="until">结束时间</label>
+                    <label for="until"><span class="terminal-prompt">></span> End Date</label>
                     <input type="datetime-local" id="until" name="until">
                 </div>
 
                 <div class="form-group">
                     <div class="checkbox-group">
                         <input type="checkbox" id="notify" name="notify">
-                        <label for="notify" style="margin: 0;">发送通知到企业微信/飞书</label>
+                        <label for="notify" style="margin: 0; text-transform: none; font-size: 13px;">Send notifications (WeChat/Feishu)</label>
                     </div>
                 </div>
 
-                <button type="submit" class="btn">生成周报</button>
+                <button type="submit" class="btn">⚡ Generate Report</button>
             </form>
 
-            <button onclick="generateAllReports()" class="btn btn-secondary">⚡ 立即生成所有用户周报</button>
+            <button onclick="generateAllReports()" class="btn btn-secondary">🚀 Generate All User Reports</button>
         </div>
 
         <div id="loading" class="card loading" style="display: none;">
             <div class="spinner"></div>
-            <p style="margin-top: 15px; color: #666;">正在生成周报...</p>
+            <p style="margin-top: 15px; color: #888;">Processing... Please wait</p>
         </div>
 
         <div id="result" class="card result">
-            <h3>📝 生成的周报</h3>
+            <h3><span class="terminal-prompt">$</span> Report Output</h3>
             <div class="report-content" id="reportContent"></div>
         </div>
 
         <div id="allResults" class="card result">
-            <h3>📊 所有用户周报</h3>
+            <h3><span class="terminal-prompt">$</span> All Reports</h3>
             <div id="allReportsContent"></div>
         </div>
 
