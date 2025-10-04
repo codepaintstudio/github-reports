@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub 周报生成器</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        input[type="text"],
+        input[type="datetime-local"],
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="datetime-local"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .result {
+            display: none;
+        }
+
+        .result.show {
+            display: block;
+        }
+
+        .result h3 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .report-content {
+            background: #f7f9fc;
+            padding: 20px;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .success {
+            background: #efe;
+            color: #3c3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .time-presets {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .preset-btn {
+            padding: 6px 12px;
+            background: #e1e8ed;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: background 0.2s;
+        }
+
+        .preset-btn:hover {
+            background: #d1d8dd;
+        }
+
+        .api-info {
+            background: #fff8e1;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .api-info code {
+            background: #ffe0b2;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            margin-top: 10px;
+        }
+
+        .user-result {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f7f9fc;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .user-result.error {
+            border-left-color: #f5576c;
+        }
+
+        .user-result h4 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .user-report {
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 GitHub 周报生成器</h1>
+            <p>自动生成您的 GitHub 活动周报</p>
+        </div>
+
+        <div class="card">
+            <div class="api-info">
+                <strong>API 地址：</strong> <code id="apiUrl">http://localhost:8080</code>
+                <button onclick="editApiUrl()" style="margin-left: 10px; padding: 4px 10px; cursor: pointer;">修改</button>
+            </div>
+
+            <form id="reportForm">
+                <div class="form-group">
+                    <label for="username">GitHub 用户名 *</label>
+                    <input type="text" id="username" name="username" required placeholder="输入您的 GitHub 用户名">
+                </div>
+
+                <div class="form-group">
+                    <label for="since">开始时间</label>
+                    <input type="datetime-local" id="since" name="since">
+                    <div class="time-presets">
+                        <button type="button" class="preset-btn" onclick="setTimeRange(7)">最近 7 天</button>
+                        <button type="button" class="preset-btn" onclick="setTimeRange(14)">最近 14 天</button>
+                        <button type="button" class="preset-btn" onclick="setTimeRange(30)">最近 30 天</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="until">结束时间</label>
+                    <input type="datetime-local" id="until" name="until">
+                </div>
+
+                <div class="form-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="notify" name="notify">
+                        <label for="notify" style="margin: 0;">发送通知到企业微信/飞书</label>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn">生成周报</button>
+            </form>
+
+            <button onclick="generateAllReports()" class="btn btn-secondary">⚡ 立即生成所有用户周报</button>
+        </div>
+
+        <div id="loading" class="card loading" style="display: none;">
+            <div class="spinner"></div>
+            <p style="margin-top: 15px; color: #666;">正在生成周报...</p>
+        </div>
+
+        <div id="result" class="card result">
+            <h3>📝 生成的周报</h3>
+            <div class="report-content" id="reportContent"></div>
+        </div>
+
+        <div id="allResults" class="card result">
+            <h3>📊 所有用户周报</h3>
+            <div id="allReportsContent"></div>
+        </div>
+
+        <div id="error" class="card" style="display: none;">
+            <div class="error" id="errorMessage"></div>
+        </div>
+    </div>
+
+    <script>
+        let apiBaseUrl = localStorage.getItem('apiUrl') || 'http://localhost:8080';
+        document.getElementById('apiUrl').textContent = apiBaseUrl;
+
+        function editApiUrl() {
+            const newUrl = prompt('请输入 API 地址：', apiBaseUrl);
+            if (newUrl) {
+                apiBaseUrl = newUrl.replace(/\/$/, ''); // 移除末尾斜杠
+                localStorage.setItem('apiUrl', apiBaseUrl);
+                document.getElementById('apiUrl').textContent = apiBaseUrl;
+            }
+        }
+
+        function setTimeRange(days) {
+            const now = new Date();
+            const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+
+            document.getElementById('since').value = formatDateTimeLocal(since);
+            document.getElementById('until').value = formatDateTimeLocal(now);
+        }
+
+        function formatDateTimeLocal(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
+        function toISO8601(dateTimeLocal) {
+            if (!dateTimeLocal) return '';
+            return new Date(dateTimeLocal).toISOString();
+        }
+
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const since = document.getElementById('since').value;
+            const until = document.getElementById('until').value;
+            const notify = document.getElementById('notify').checked;
+
+            // 隐藏之前的结果
+            document.getElementById('result').classList.remove('show');
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+
+            const requestBody = {
+                username: username,
+                notify: notify
+            };
+
+            if (since) requestBody.since = toISO8601(since);
+            if (until) requestBody.until = toISO8601(until);
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/v1/reports/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '生成报告失败');
+                }
+
+                const data = await response.json();
+
+                document.getElementById('reportContent').textContent = data.report;
+                document.getElementById('result').classList.add('show');
+
+                if (data.warning) {
+                    document.getElementById('errorMessage').textContent = '⚠️ ' + data.warning;
+                    document.getElementById('error').style.display = 'block';
+                }
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('errorMessage').textContent = error.message;
+                document.getElementById('error').style.display = 'block';
+            }
+        });
+
+        // Generate all reports
+        async function generateAllReports() {
+            // Hide previous results
+            document.getElementById('result').classList.remove('show');
+            document.getElementById('allResults').classList.remove('show');
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('loading').style.display = 'block';
+
+            try {
+                const response = await fetch(`${apiBaseUrl}/api/v1/reports/generate-all`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || '批量生成报告失败');
+                }
+
+                const data = await response.json();
+                const container = document.getElementById('allReportsContent');
+                container.innerHTML = '';
+
+                data.results.forEach(result => {
+                    const userDiv = document.createElement('div');
+                    userDiv.className = result.error ? 'user-result error' : 'user-result';
+
+                    const title = document.createElement('h4');
+                    title.textContent = `👤 ${result.username}`;
+                    userDiv.appendChild(title);
+
+                    if (result.error) {
+                        const errorP = document.createElement('p');
+                        errorP.style.color = '#c33';
+                        errorP.textContent = `❌ ${result.error}`;
+                        userDiv.appendChild(errorP);
+                    } else {
+                        const timeP = document.createElement('p');
+                        timeP.style.fontSize = '13px';
+                        timeP.style.color = '#666';
+                        timeP.style.marginBottom = '10px';
+                        timeP.textContent = `时间范围: ${new Date(result.since).toLocaleString()} - ${new Date(result.until).toLocaleString()}`;
+                        userDiv.appendChild(timeP);
+
+                        const reportDiv = document.createElement('div');
+                        reportDiv.className = 'user-report';
+                        reportDiv.textContent = result.report;
+                        userDiv.appendChild(reportDiv);
+
+                        if (result.notification_error) {
+                            const notifyP = document.createElement('p');
+                            notifyP.style.color = '#f5576c';
+                            notifyP.style.marginTop = '10px';
+                            notifyP.style.fontSize = '13px';
+                            notifyP.textContent = `⚠️ 通知发送失败: ${result.notification_error}`;
+                            userDiv.appendChild(notifyP);
+                        } else {
+                            const successP = document.createElement('p');
+                            successP.style.color = '#3c3';
+                            successP.style.marginTop = '10px';
+                            successP.style.fontSize = '13px';
+                            successP.textContent = '✓ 已发送通知';
+                            userDiv.appendChild(successP);
+                        }
+                    }
+
+                    container.appendChild(userDiv);
+                });
+
+                document.getElementById('allResults').classList.add('show');
+
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('errorMessage').textContent = error.message;
+                document.getElementById('error').style.display = 'block';
+            }
+        }
+
+        // 初始化时间为最近 7 天
+        setTimeRange(7);
+    </script>
+</body>
+</html>

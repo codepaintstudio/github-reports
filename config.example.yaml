@@ -1,0 +1,44 @@
+server:
+  port: 8080
+
+github:
+  tokens:
+    - token: "ghp_your_github_token_here"
+      username: "your_username"
+    # Add more tokens for multiple users
+    # - token: "ghp_another_token"
+    #   username: "another_user"
+
+llm:
+  provider: "deepseek"  # openai, claude, deepseek, custom
+  api_key: "sk-your-api-key-here"
+  model: "deepseek-chat"
+  base_url: "https://api.deepseek.com/v1"  # optional, for custom endpoints
+  prompt_template: |
+    你是一个专业的技术周报生成助手。请根据以下 GitHub 活动数据，生成一份简洁专业的周报。
+
+    要求：
+    1. 总结本周的主要工作成果和亮点
+    2. 统计关键数据（commits 数量、PR 数量、代码行数等）
+    3. 列出主要的技术改进和功能开发
+    4. 使用 Markdown 格式，结构清晰
+    5. 语言简洁专业，突出重点
+
+    GitHub 活动数据：
+    {activity_data}
+
+    请生成周报：
+
+scheduler:
+  enabled: true
+  cron: "0 15 * * 5"  # 每周五下午 3 点执行
+  default_since: 168h  # 7 days
+
+notifiers:
+  wechat:
+    enabled: false
+    webhook_url: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key-here"
+
+  feishu:
+    enabled: false
+    webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/your-hook-here"
