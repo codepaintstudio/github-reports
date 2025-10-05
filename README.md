@@ -8,6 +8,7 @@
 - **数据采集**：自动拉取 Commits、PR、Issues、Code Reviews 等活动数据
 - **AI 总结**：使用 DeepSeek 生成技术深度分析报告
 - **飞书集成**：Webhook 触发 + 自动推送结果到飞书
+- **异步处理**：立即响应请求，后台处理，避免超时重试
 - **Token 认证**：Webhook 接口受 token 保护
 - **错误推送**：处理失败时自动将错误信息发送到飞书
 
@@ -98,11 +99,13 @@ POST https://your-domain.com/api/v1/webhook
 
 #### 3. 自动流程
 
-1. 飞书 → 你的 Webhook
-2. LLM 提取用户名 `minorcell`
-3. 拉取 GitHub 最近 7 天的活动数据
-4. LLM 生成技术分析报告
-5. 推送报告到飞书群
+1. 飞书发送请求到 Webhook
+2. 服务立即返回 200 响应（避免超时）
+3. 后台异步处理：
+   - LLM 提取用户名 `minorcell`
+   - 拉取 GitHub 最近 7 天的活动数据
+   - LLM 生成技术分析报告
+   - 推送报告到飞书群
 
 #### 4. 接收报告
 
@@ -151,19 +154,19 @@ curl -X POST http://localhost:8080/api/v1/webhook \
 }
 ```
 
-**响应成功**：
+**响应（立即返回）**：
 
 ```json
 {
-  "status": "success",
-  "username": "minorcell",
-  "message": "Report generated and sent to Feishu"
+  "status": "accepted",
+  "message": "Request received, processing in background"
 }
 ```
 
-**响应失败**：
+**错误处理**：
 
-错误信息会自动发送到飞书，HTTP 返回错误码。
+- 解析失败时立即返回 400/500 错误
+- 处理失败时错误信息会自动发送到飞书
 
 ## 工作流程
 
@@ -174,18 +177,23 @@ curl -X POST http://localhost:8080/api/v1/webhook \
     ↓
 验证 Token
     ↓
-LLM 提取 GitHub 用户名
+立即返回 200 响应（避免飞书超时重试）
     ↓
-拉取 GitHub 活动数据 (最近 7 天)
-    ↓
-LLM 生成技术分析报告
-    ↓
-推送报告到飞书
+后台异步处理：
+  - LLM 提取 GitHub 用户名
+  - 拉取 GitHub 活动数据 (最近 7 天)
+  - LLM 生成技术分析报告（60秒超时）
+  - 推送报告到飞书
     ↓
 用户在飞书收到报告
 ```
 
-如果任何步骤失败，错误信息会自动发送到飞书。
+**超时控制**：
+- HTTP 客户端：60 秒超时
+- 异步处理：5 分钟总超时
+- 飞书 Webhook：立即响应，不等待处理完成
+
+**错误处理**：处理失败时错误信息自动发送到飞书。
 
 ## 相关链接
 
